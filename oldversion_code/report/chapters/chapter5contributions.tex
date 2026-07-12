@@ -1,0 +1,40 @@
+\chapter{Các Giải Pháp Và Đóng Góp Nổi Bật}
+
+\section{Kiến trúc node đo IoT theo hướng thực tế}
+Một trong những đóng góp nổi bật về mặt phần cứng của đề tài là việc cải tiến cấu trúc lấy mẫu khí. Trong các dự án IoT thông thường, cảm biến bụi và cảm biến khí thường được lắp đặt lộ thiên hoặc gắn trực tiếp trên vỏ hộp thiết bị. Việc này gây ra hai nhược điểm thực tế: cảm biến bị bám bụi bẩn thụ động làm giảm độ nhạy quang học nhanh chóng, và không khí xung quanh cảm biến bị nung nóng do nhiệt độ tỏa ra từ module ESP32 (có thể lên tới 40°C - 45°C bên trong hộp kín), dẫn đến sai số đo nhiệt độ và MQ135.
+
+Nhóm đã thiết kế buồng lấy mẫu khí chủ động tích hợp quạt hút điều khiển qua relay:
+\begin{itemize}
+    \item \textbf{Cấu trúc buồng kín}: Toàn bộ cảm biến bụi Sharp và MQ135 được đặt cách ly trong buồng khí acrylic chuyên dụng.
+    \item \textbf{Hút lấy mẫu cưỡng bức}: Quạt hút 5V lắp ở cuối buồng đo chỉ quay trong chu kỳ warm-up 60 giây để hút khí cưỡng bức từ bên ngoài chạy qua bề mặt cảm biến, đảm bảo luồng khí lấy mẫu luôn là luồng khí mới nhất của môi trường cần đo và có lưu lượng ổn định.
+    \item \textbf{Tiết kiệm điện và tăng tuổi thọ}: Sau khi lấy mẫu xong, quạt tự động tắt (Relay OFF) trong suốt 5 phút IDLE, giúp bảo vệ lớp nhạy cảm SnO2 của MQ135 và diode phát hồng ngoại của Sharp khỏi bị lão hóa nhanh, đồng thời hạn chế bụi bẩn bám thụ động vào buồng quang học của GP2Y.
+\end{itemize}
+
+\section{Tổ chức firmware đa tác vụ trên FreeRTOS}
+Việc tích hợp hệ điều hành thời gian thực FreeRTOS giúp tối ưu hóa hiệu năng tính toán của dòng chip lõi kép ESP32. Đóng góp nổi bật về mặt phần mềm là việc tách biệt hoàn toàn luồng xử lý giao thức mạng khỏi luồng đo đạc cảm biến:
+\begin{itemize}
+    \item \textbf{TaskNetwork chạy độc lập trên Core 0}: Đảm nhận toàn bộ việc quản lý kết nối Wi-Fi chập chờn, thực hiện bắt tay TLS bảo mật, gửi dữ liệu REST API và quét tệp tin cache.
+    \item \textbf{TaskSensors chạy trên Core 1}: Đảm nhận việc govern máy trạng thái, điều khiển relay quạt hút, nhịp xung hồng ngoại của cảm biến bụi Sharp và giao tiếp single-bus DHT22.
+\end{itemize}
+
+Nhờ kiến trúc đa tác vụ non-blocking này, ngay cả khi trạm đo bị mất kết nối Wi-Fi hoàn toàn hoặc máy chủ Supabase phản hồi chậm (HTTP timeout), quá trình đo đạc cục bộ và cập nhật hiển thị lên màn hình OLED vẫn diễn ra mượt mà đúng chu kỳ thời gian, không bị hiện tượng giật lag hoặc treo đứng thiết bị như các chương trình đơn luồng trên Arduino thông thường.
+
+\section{Giải pháp lưu trữ ngoại tuyến bằng SPIFFS cache}
+Cơ chế offline cache sử dụng phân vùng bộ nhớ SPIFFS được thiết kế bài bản để giải quyết triệt để bài toán mất mát dữ liệu do kết nối Internet không ổn định ở các khu vực như nhà xe hoặc hành lang.
+Điểm nổi bật của giải pháp này là thuật toán xử lý hàng đợi tệp tin thông minh:
+1. Khi phát hiện Wi-Fi ngắt hoặc HTTP POST trả về mã lỗi (khác 200/201), dữ liệu SensorRecord lập tức được chuyển thành dòng JSON phẳng và append trực tiếp xuống cuối file \texttt{/cache.txt}.
+2. Khi có mạng trở lại, thiết bị không gửi dồn dập toàn bộ file để tránh tràn bộ đệm RAM. TaskNetwork đọc lần lượt từng dòng JSON từ đầu file, convert ngược, override trạng thái \texttt{status = OFFLINE\_CACHED} (để báo cho cloud biết đây là dữ liệu quá khứ) và POST lên Supabase.
+3. Nếu trong lúc đẩy bù mà mạng lại bị ngắt quãng, các bản ghi chưa gửi được sẽ được giữ lại an toàn bằng cách ghi tạm vào \texttt{/temp\_cache.txt}, sau đó rename đè lại \texttt{/cache.txt}. Thuật toán này ngăn ngừa hoàn toàn hiện tượng trùng lặp bản ghi hoặc mất dữ liệu giữa chừng.
+
+\section{Bảo vệ dữ liệu bằng Mutex và xử lý lỗi cảm biến}
+\begin{itemize}
+    \item \textbf{Bảo vệ tài nguyên bằng Mutex}: Hệ thống sử dụng hai khóa cơ bản \texttt{dataMutex} và \texttt{i2cMutex}. Việc truy cập ghi dữ liệu cảm biến vào cấu trúc \texttt{sharedRecord} của \texttt{TaskSensors} và đọc dữ liệu để OLED hiển thị của \texttt{TaskOLED} bắt buộc phải tranh chấp khóa \texttt{dataMutex} qua hàm \texttt{xSemaphoreTake}. Bus I2C dùng chung giữa màn hình và cảm biến được bảo vệ nghiêm ngặt bằng khóa \texttt{i2cMutex}. Cơ chế này ngăn chặn hoàn toàn hiện tượng tranh chấp phần cứng (I2C bus lockup) hoặc xung đột bộ nhớ trong hệ thống đa nhân.
+    \item \textbf{Xử lý giá trị lỗi NaN (Not a Number)}: Cảm biến DHT22 hoặc bụi thỉnh thoảng trả về giá trị lỗi \texttt{NaN} do nhiễu vật lý hoặc tiếp xúc dây kém. Thay vì gửi dữ liệu lỗi này làm sai lệch biểu đồ trên cloud, firmware kiểm tra \texttt{isnan(...)}. Nếu phát hiện, hệ thống thiết lập trạng thái lỗi \texttt{SENSOR\_READ\_ERROR}, định dạng trường dữ liệu bị lỗi thành \texttt{nullptr} (tương đương giá trị \texttt{null} trong cơ sở dữ liệu PostgreSQL) khi gửi gói JSON. Giải pháp này giúp cơ sở dữ liệu đám mây luôn sạch, không bị lẫn các giá trị rác.
+\end{itemize}
+
+\section{Tích hợp Supabase Edge Functions \& Telegram Bot bảo mật}
+Mô hình cảnh báo từ xa thông minh của hệ thống được tách biệt và xử lý phía đám mây (Cloud-side Alert) thay vì gửi tin nhắn trực tiếp từ ESP32:
+\begin{itemize}
+    \item \textbf{Tăng tính bảo mật cho thiết bị}: Để gửi tin nhắn qua Telegram, bắt buộc phải sử dụng mã Token bí mật của Bot (\texttt{8864504624:AAG27vuE8ffZS...}) và Chat ID của người nhận. Nếu nhúng các token này trực tiếp vào mã nguồn C++ của ESP32, khi thiết bị bị mất trộm hoặc bị dịch ngược firmware (decompile), các API key bảo mật sẽ bị lộ hoàn toàn.
+    \item \textbf{Giải pháp Cloud Webhook}: ESP32 chỉ đẩy dữ liệu đo đạc lên Supabase. Khi phát hiện chỉ số đo vượt ngưỡng, Supabase Database Webhook sẽ tự động kích hoạt và gửi một HTTP POST an toàn gọi sang Supabase Edge Function \texttt{telegram-alert} (viết bằng TypeScript chạy trên môi trường Deno bảo mật). Edge Function này sẽ đọc bí mật Token lưu trữ trong biến môi trường bảo mật của Supabase Server và thực hiện gọi Telegram API gửi tin nhắn cảnh báo tới điện thoại người dùng. Giải pháp này đảm bảo thiết bị nhúng ở đầu cuối hoàn toàn không chứa bất kỳ secret key nhạy cảm nào, đạt tiêu chuẩn an toàn thông tin công nghiệp.
+\end{itemize}

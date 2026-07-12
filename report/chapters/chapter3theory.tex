@@ -1,0 +1,97 @@
+\chapter{Nền Tảng Lý Thuyết Và Công Nghệ Sử Dụng}
+
+\section{Tổng quan lựa chọn công nghệ}
+Để xây dựng một hệ thống quan trắc chất lượng không khí đáp ứng đầy đủ các tiêu chuẩn kỹ thuật đề ra, nhóm đã lựa chọn kiến trúc công nghệ dựa trên 4 trụ cột cốt lõi:
+\begin{enumerate}
+    \item \textbf{Vi điều khiển ESP32 (Sản phẩm của Espressif Systems)}: Dòng chip SoC tích hợp đầy đủ Wi-Fi và Bluetooth, có hiệu năng xử lý mạnh mẽ với 2 nhân Tensilica Xtensa 32-bit LX6 độc lập hoạt động ở xung nhịp lên tới 240 MHz, bộ nhớ RAM lớn (520 KB SRAM), và hỗ trợ nhiều ngoại vi giao tiếp phần cứng (ADC, I2C, SPI, UART). Đây là lựa chọn hoàn hảo cho trạm đo thông minh.
+    \item \textbf{Hệ điều hành thời gian thực FreeRTOS}: Nhân FreeRTOS tích hợp sẵn trong Arduino framework của ESP32. Cho phép nhóm thiết kế hệ thống chạy đa luồng (multithreading), phân bổ các task truyền thông mạng và đo đạc cảm biến trên các nhân độc lập để triệt tiêu độ trễ mạng và tránh hiện tượng treo vi điều khiển (non-blocking).
+    \item \textbf{Hệ thống đám mây Supabase (BaaS - Backend as a Service)}: Dịch vụ đám mây mã nguồn mở xây dựng trên cơ sở dữ liệu quan hệ PostgreSQL mạnh mẽ. Supabase tự động cung cấp RESTful API trên giao thức HTTPS, cho phép ESP32 đẩy trực tiếp dữ liệu thô vào bảng thông qua các thư viện JSON chuẩn hóa mà không cần xây dựng máy chủ trung gian phức tạp.
+    \item \textbf{Telegram Bot API}: Dịch vụ tin nhắn khẩn cấp miễn phí, có độ trễ truyền gửi thấp, tính bảo mật cao và dễ tích hợp qua giao thức HTTPS.
+
+\end{enumerate}
+
+\section{Các thông số chất lượng không khí và Công thức quy đổi}
+\subsection{Nhiệt độ và Độ ẩm môi trường}
+Nhiệt độ và độ ẩm là hai thông số môi trường cơ bản nhất ảnh hưởng trực tiếp đến sức khỏe con người và hiệu năng của các linh kiện điện tử. Ngoài ra, trong các nghiên cứu khoa học nhúng, độ ẩm tương đối (RH) cao gây hiện tượng hút ẩm của hạt bụi (hygroscopic growth), làm tăng thể tích hạt bụi giả lập, dẫn đến việc các cảm biến bụi quang học thô báo chỉ số cao hơn thực tế. Do đó, việc đo chính xác nhiệt độ/độ ẩm là cơ sở bắt buộc để hiệu chuẩn các thuật toán về sau.
+
+\subsection{Khí gas tổng quát từ cảm biến MQ135}
+Cảm biến MQ135 sử dụng phần tử nhạy cảm SnO2 có độ dẫn điện thấp trong không khí sạch. Khi môi trường xuất hiện khí ô nhiễm (CO2, CO, NH3, khói), độ dẫn điện của cảm biến tăng lên.
+Để xác định nồng độ khí gas một cách tương đối, nhóm áp dụng công thức quy đổi điện trở cảm biến ($Rs$) dựa trên điện trở tải ngoài ($R_L = 10k\Omega$) và điện áp cấp ($V_c = 5V$):
+\begin{equation}
+    Rs = R_L \times \frac{V_c - V_{sensor}}{V_{sensor}}
+\end{equation}
+Trong đó $V_{sensor}$ là điện áp thực tế tại đầu ra của cảm biến MQ135 (sau khi qua cầu phân áp để bảo vệ chân ADC ESP32). Nồng độ khí gas tương đối trong không khí ($ratio$) được tính bằng tỷ số giữa điện trở cảm biến trong không khí đo đạc ($Rs$) và điện trở cảm biến trong môi trường không khí sạch tiêu chuẩn ($R_0$):
+\begin{equation}
+    ratio = \frac{Rs}{R_0}
+\end{equation}
+Dựa trên tỷ số $ratio$, nồng độ khí CO2/khí độc tương đối dưới dạng PPM có thể được ước lượng tuyến tính hóa qua phương trình logarit:
+\begin{equation}
+    PPM = a \times (ratio)^b
+\end{equation}
+Trong đó $a$ và $b$ là các hệ số hiệu chuẩn đặc trưng từ nhà sản xuất (Winsen) hoặc qua thực nghiệm calibration ($a = 110.47, b = -2.862$ đối với CO2). Công thức PPM quy đổi này chỉ mang tính chất tham khảo, phản ánh xu hướng chất lượng không khí, không được dùng làm chỉ số tuyệt đối nếu chưa có thiết bị đo khí chuyên dụng làm baseline đối chứng.
+
+\subsection{Nồng độ bụi từ cảm biến GP2Y1010AU0F}
+Cảm biến GP2Y1010AU0F đo mật độ bụi dựa trên cường độ ánh sáng hồng ngoại tán xạ bởi các hạt bụi trong buồng đo. Điện áp đầu ra Analog của cảm biến tỷ lệ thuận với nồng độ bụi tương đối.
+Công thức quy đổi nồng độ bụi ($DustDensity$ đơn vị $\mu g/m^3$) từ điện áp cảm biến ($V_{sensor}$) được định nghĩa theo đặc tính tuyến tính của hãng Sharp:
+\begin{equation}
+    DustDensity = (0.17 \times V_{sensor} - \text{GP2Y\_ZERO\_DUST\_VOLTAGE}) \times 1000
+\end{equation}
+Trong đó $GP2Y\_ZERO\_DUST\_VOLTAGE$ là điện áp đầu ra khi môi trường hoàn toàn sạch bụi (mặc định $0.588V$ hoặc được hiệu chuẩn tĩnh). Trị số quy đổi này mang tính chất chỉ thị mật độ bụi tương đối cục bộ trong không khí, phản ánh xu hướng môi trường.
+
+\section{Vi điều khiển ESP32 và Hệ điều hành FreeRTOS}
+\subsection{Kiến trúc đa tác vụ Pinned to Core}
+ESP32 DevKit sở hữu bộ vi xử lý lõi kép. Mặc định, Arduino framework chạy đơn luồng tuần tự. Khi tích hợp FreeRTOS, nhóm có thể chia nhỏ chương trình thành các luồng xử lý độc lập chạy song song:
+\begin{itemize}
+    \item \textbf{Core 0 (Protocol Core)}: Pinned cho \texttt{TaskNetwork} để xử lý giao thức Wi-Fi, kết nối TLS và gửi yêu cầu HTTPS POST lên Supabase.
+    \item \textbf{Core 1 (Application Core)}: Pinned cho \texttt{TaskSensors} (chạy State Machine và đọc cảm biến) và \texttt{TaskOLED} (vẽ màn hình).
+\end{itemize}
+
+Kiến trúc phân chia nhân này đảm bảo rằng khi \texttt{TaskNetwork} bị nghẽn mạng do Wi-Fi chập chờn (có thể mất tới 5 - 10 giây để reconnect), task đọc cảm biến và task vẽ màn hình OLED trên Core 1 vẫn hoạt động bình thường, màn hình OLED không bị giật lag và buzzer cảnh báo tại chỗ vẫn kêu ngay lập tức khi phát hiện khí gas rò rỉ.
+
+\subsection{Scheduler và Mutex đồng bộ hóa}
+FreeRTOS sử dụng bộ lập lịch ưu tiên dựa trên thời gian (Priority-based Preemptive Scheduler). Vì các task chạy song song và truy cập chung vào tài nguyên hệ thống, nhóm sử dụng hai khóa Mutex (\texttt{dataMutex} và \texttt{i2cMutex}) để đảm bảo an toàn đa luồng:
+\begin{itemize}
+    \item \textbf{\texttt{dataMutex}}: Ngăn ngừa lỗi xung đột dữ liệu (data race/corruption) khi \texttt{TaskSensors} đang ghi dữ liệu mới vào cấu trúc \texttt{sharedRecord} trong khi \texttt{TaskNetwork} hoặc \texttt{TaskOLED} đang đọc dữ liệu từ cấu trúc này để truyền hoặc hiển thị.
+    \item \textbf{\texttt{i2cMutex}}: Bảo vệ bus vật lý I2C. Do OLED SSD1306 và cảm biến môi trường (nếu dùng BME680) dùng chung hai đường tín hiệu vật lý SDA/SCL, khóa \texttt{i2cMutex} đảm bảo tại một thời điểm chỉ có duy nhất một task được quyền truyền thông tin trên bus, tránh xung đột tín hiệu gây đơ phần cứng I2C.
+\end{itemize}
+
+\section{Cảm biến bụi quang học GP2Y1010AU0F}
+Cảm biến bụi Sharp GP2Y1010AU0F hoạt động dựa trên nguyên lý cảm quang hồng ngoại. Bên trong cảm biến có một diode phát hồng ngoại (IRED) và một transistor quang (Phototransistor) đặt chéo góc nhau.
+\insertimage{images/cambienbui.jpg}{Sơ đồ nguyên lý cấu trúc cảm biến bụi Sharp GP2Y1010AU0F}{fig:sharpinternal}
+
+Quy trình đọc cảm biến bụi yêu cầu tuân thủ nghiêm ngặt chu kỳ kích xung hồng ngoại của hãng sản xuất để thu được kết quả chính xác:
+\item ESP32 kéo chân điều khiển LED (\texttt{GP2Y\_LED\_PIN}) xuống mức thấp (Active LOW) để bật IRED hồng ngoại.
+\item Chờ đúng \textbf{$0.28ms$} ($280\mu s$) để luồng hạt bụi đi qua buồng đo tán xạ ánh sáng hồng ngoại lên bề mặt Phototransistor.
+\item Thực hiện đọc giá trị điện áp ADC từ chân cảm biến (\texttt{GP2Y\_PIN}) (mất khoảng $40\mu s$ đối với ESP32).
+\item Chờ tiếp \textbf{$0.04ms$} ($40\mu s$) để hoàn thành cửa sổ đo $0.32ms$.
+\item Kéo chân điều khiển LED lên mức cao (HIGH) để tắt IRED hồng ngoại.
+\item Chờ hết chu kỳ \textbf{$9.68ms$} trước khi thực hiện lần lấy mẫu tiếp theo (tổng chu kỳ xung $10ms$).
+
+\section{Cảm biến môi trường DHT22 và MQ135}
+\begin{itemize}
+    \item \textbf{Cảm biến DHT22}: Sử dụng một cảm biến độ ẩm dung môi trường điện môi polymer và một cảm biến nhiệt độ thermistor NTC. Cảm biến tích hợp một MCU 8-bit bên trong để xử lý số liệu, tự động chuyển đổi dữ liệu môi trường thành chuỗi bit số truyền về ESP32 qua giao thức 1 dây (Single-Bus) độc quyền với độ chính xác cao.
+    \item \textbf{Cảm biến MQ135}: Là cảm biến khí bán dẫn Metal Oxide (MOS). MQ135 tích hợp một vòng nung nóng bằng dây nickel-chromium và lớp oxit thiếc (SnO2) nhạy cảm. Dây nung cần dòng điện lớn (~150mA) để làm nóng bề mặt SnO2 lên khoảng 300°C - 400°C để các phản ứng oxi hóa khử với khí độc môi trường xảy ra, làm thay đổi điện trở bề mặt. Do đó, MQ135 bắt buộc phải được cung cấp nguồn điện ổn định 5V và có thời gian warm-up tối thiểu 60 giây trước mỗi lần đọc.
+\end{itemize}
+
+\section{Cơ sở dữ liệu đám mây Supabase và REST API}
+Supabase là nền tảng Backend-as-a-Service (BaaS) đồng bộ hóa trực tiếp với PostgreSQL. Supabase tự động expose một RESTful API thông qua PostgREST engine.
+ESP32 giao tiếp với Supabase thông qua thư viện \texttt{HTTPClient} của Arduino framework:
+\begin{itemize}
+    \item \textbf{Phương thức gửi}: HTTP POST.
+    \item \textbf{Headers bắt buộc}:
+  \begin{itemize}
+      \item \texttt{Content-Type: application/json}
+      \item \texttt{apikey: <anon\_key>} (Mã xác thực ẩn danh của Supabase)
+      \item \texttt{Authorization: Bearer <anon\_key>}
+    \end{itemize}
+    \item \textbf{Database Webhook}: Supabase hỗ trợ cơ chế lắng nghe sự kiện của Database. Khi một bản ghi chất lượng không khí được chèn vào bảng \texttt{air\_quality\_logs}, Supabase tự động phát một HTTP POST Webhook gọi trực tiếp sang Deno Edge Function \texttt{telegram-alert} để xử lý logic cảnh báo.
+\end{itemize}
+
+\section{Lưu trữ dữ liệu ngoại tuyến bằng SPIFFS}
+SPIFFS (SPI Flash File System) là hệ thống tệp tin gọn nhẹ được thiết kế riêng cho các chip nhớ flash giao tiếp SPI trên các thiết bị nhúng. SPIFFS hỗ trợ cơ chế lưu trữ tệp tin phẳng (flat directory structure), không có thư mục con, tiêu thụ rất ít bộ nhớ RAM tĩnh.
+Trong project này, SPIFFS được phân vùng trên bộ nhớ flash nội bộ của ESP32 để làm offline cache:
+\begin{itemize}
+    \item \textbf{Tệp lưu trữ}: \texttt{/cache.txt}.
+    \item \textbf{Định dạng ghi}: Mỗi bản ghi SensorRecord được serialize thành một dòng chuỗi JSON phẳng. Khi cache dữ liệu mới, ESP32 mở file ở chế độ \texttt{FILE\_APPEND} và ghi đè xuống cuối file.
+    \item \textbf{Xử lý đồng bộ}: Khi mạng khôi phục, file \texttt{/cache.txt} được mở ở chế độ \texttt{FILE\_READ}, đọc từng dòng JSON, chuyển đổi ngược thành cấu trúc \texttt{SensorRecord}, thiết lập cờ trạng thái \texttt{status = OFFLINE\_CACHED} rồi POST lên Supabase. Các bản ghi gửi thất bại sẽ được ghi tạm vào file \texttt{/temp\_cache.txt}, sau đó rename đè lại \texttt{/cache.txt} để đảm bảo dữ liệu không bao giờ bị mất hoặc bị trùng lặp.
+\end{itemize}

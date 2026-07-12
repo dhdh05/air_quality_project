@@ -1,0 +1,34 @@
+# PlatformIO build output
+.pio/
+*.o
+*.obj
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+*.log
+*.zip
+compile_commands.json
+
+# VS Code / IDE local metadata
+.vscode/
+
+# Secrets and local environment config
+firmware/include/secrets.h
+.env
+.env.*
+supabase/.env
+supabase/.env.*
+supabase/.temp/
+
+# Generated or runtime-only data
+data/
+report/
+oldversion_code/
+# Common temp/editor leftovers
+*.tmp
+*.bak
+*~
+.DS_Store
+Thumbs.db

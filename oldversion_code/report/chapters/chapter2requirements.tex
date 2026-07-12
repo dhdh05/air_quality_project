@@ -1,0 +1,193 @@
+\chapter{Khảo Sát Và Phân Tích Yêu Cầu}
+
+\section{Khảo sát hiện trạng}
+\subsection{Nhu cầu người dùng và Phân tích 5W1H}
+Để xác định các tính năng cần có của hệ thống quan trắc chất lượng không khí, nhóm đã tiến hành phân tích nhu cầu của các nhóm đối tượng sử dụng mục tiêu thông qua phương pháp 5W1H. Chi tiết cuộc phân tích được mô tả như sau:
+\begin{enumerate}
+    \item \textbf{Who (Ai sử dụng hệ thống?)}: 
+    \begin{itemize}
+        \item \textit{Người dùng chính}: Học sinh, sinh viên và nhà nghiên cứu trong lĩnh vực kỹ thuật nhúng/IoT cần bộ dữ liệu môi trường thực tế có cấu trúc rõ ràng để thực hành phân tích số liệu, hiệu chỉnh sai số cảm biến hoặc phát triển mô hình dự báo.
+        \item \textit{Người dùng phụ}: Người quản lý phòng học, hộ gia đình hoặc ban quản lý nhà xe cần theo dõi nhanh mức độ ô nhiễm không khí tại vị trí lắp đặt để đưa ra quyết định thông gió hoặc bật quạt hút bảo vệ sức khỏe.
+    \end{itemize}
+    \item \textbf{What (Hệ thống cung cấp những gì?)}: Một thiết bị phần cứng nhỏ gọn có khả năng hiển thị các chỉ số tại chỗ (OLED), lưu trữ dữ liệu lịch sử trên đám mây, phát tín hiệu cảnh báo tại chỗ (LED/Buzzer) và đẩy tin nhắn cảnh báo khẩn cấp/báo cáo định kỳ lên điện thoại (Telegram).
+    \item \textbf{Where (Hệ thống hoạt động ở đâu?)}: Đặt tại không gian trong nhà (indoor) như phòng học, phòng thí nghiệm, phòng ngủ hoặc khu vực bán lộ thiên như nhà gửi xe (outdoor).
+    \item \textbf{When (Khi nào hệ thống hoạt động?)}: Hệ thống hoạt động liên tục 24/7. Cứ mỗi chu kỳ lấy mẫu (mặc định 5 phút), hệ thống sẽ thức dậy, tự động làm nóng cảm biến, đọc giá trị, hiển thị và truyền dữ liệu.
+    \item \textbf{Why (Tại sao cần hệ thống này?)}: Để giúp người dùng nhận biết các điều kiện ô nhiễm vô hình một cách trực quan, tránh hít phải khí độc và bụi mịn ở mức nguy hiểm, đồng thời cung cấp chuỗi số liệu thực nghiệm phục vụ học tập học thuật.
+    \item \textbf{How (Hệ thống hoạt động như thế nào?)}: ESP32 đọc dữ liệu từ các cảm biến qua giao tiếp Analog/GPIO/I2C, xử lý chống nhiễu lọc trung bình, gửi dữ liệu qua HTTPS POST trực tiếp lên REST API của Supabase và kích hoạt các trigger cảnh báo tự động thông qua webhook.
+\end{enumerate}
+
+\subsection{Các nhóm giải pháp hiện có trên thị trường}
+Hiện nay, việc theo dõi chất lượng không khí có thể thực hiện qua 3 nhóm giải pháp chính:
+\begin{itemize}
+    \item \textbf{Trạm quan trắc chuyên dụng chuyên nghiệp (ví dụ: PAMAir, trạm khí tượng của chính phủ)}:
+  \begin{itemize}
+      \item \textit{Ưu điểm}: Độ chính xác cực kỳ cao, cảm biến đạt chuẩn đo lường quốc gia, hoạt động ổn định trong mọi điều kiện thời tiết khắc nghiệt.
+      \item \textit{Hạn chế}: Chi phí đầu tư rất lớn (vài chục đến hàng trăm triệu đồng), thiết kế hệ thống đóng kín, sinh viên không thể can thiệp sâu vào phần cứng hay cấu trúc firmware.
+    \end{itemize}
+    \item \textbf{Thiết bị đo thương mại di động (ví dụ: IQAir AirVisual Pro)}:
+  \begin{itemize}
+      \item \textit{Ưu điểm}: Thiết kế thẩm mỹ cao, giao diện hiển thị trực quan đẹp mắt, hỗ trợ đồng bộ ứng dụng di động tốt.
+      \item \textit{Hạn chế}: Giá thành cao (khoảng 5 - 8 triệu đồng), không hỗ trợ trích xuất dữ liệu thô dạng bảng dễ dàng cho các bài toán nghiên cứu học máy cục bộ.
+    \end{itemize}
+    \item \textbf{Hệ thống tự chế DIY/IoT chi phí thấp}:
+  \begin{itemize}
+      \item \textit{Ưu điểm}: Chi phí linh kiện rất rẻ (< 1 - 2 triệu đồng), cấu trúc mở hoàn toàn, sinh viên có thể tự do lập trình và nâng cấp.
+      \item \textit{Hạn chế}: Độ ổn định cơ khí buồng lấy mẫu kém, thường bị mất dữ liệu khi mất kết nối mạng và thiết kế nguồn điện không có mạch bảo vệ chống sụt áp.
+    \end{itemize}
+\end{itemize}
+
+Bảng \ref{tab:existingsolutions} so sánh tổng quan các nhóm giải pháp trên với nguyên mẫu thiết kế nâng cấp của nhóm.
+
+\begin{table}[H]
+\centering
+\caption{So sánh nguyên mẫu đề tài với các giải pháp hiện có}
+\label{tab:existingsolutions}
+\begin{small}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Tiêu chí so sánh} & \textbf{Trạm chuyên dụng} & \textbf{IQAir Thương mại} & \textbf{Hệ thống DIY thường} & \textbf{Nguyên mẫu nhóm} \\
+\midrule
+Chi phí đầu tư & Rất cao & Cao & Rất thấp & Thấp ($< 2$ triệu) \\
+Tính mở phần cứng & Không & Không & Có & Có \\
+Tùy biến firmware & Không & Không & Có & Có \\
+Buồng hút lấy mẫu & Có & Có & Không & Có (Cải tiến quạt) \\
+Offline Caching & Có & Có & Không & Có (SPIFFS cache) \\
+Cloud Alert & Có & Có & Hạn chế & Có (Edge + Telegram) \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table}
+
+\subsection{So sánh Supabase HTTP REST với MQTT trong phạm vi project này}
+Giao thức truyền thông là yếu tố cốt lõi ảnh hưởng trực tiếp đến hiệu năng và cấu trúc phần mềm của trạm đo IoT. Bảng \ref{tab:httpvsmqtt} phân tích và so sánh việc sử dụng giao thức HTTPS POST trực tiếp lên REST API của Supabase với giao thức MQTT truyền thống trong phạm vi thực tế của project này.
+
+\begin{table}[H]
+\centering
+\caption{So sánh giao thức truyền thông HTTPS POST và MQTT}
+\label{tab:httpvsmqtt}
+\begin{small}
+\begin{tabular}{lp{6.0cm}p{6.0cm}}
+\toprule
+\textbf{Đặc tính so sánh} & \textbf{HTTPS POST trực tiếp (Supabase)} & \textbf{MQTT qua Broker trung gian} \\
+\midrule
+\textbf{Kiến trúc hệ thống} & Đơn giản, ESP32 gọi trực tiếp Cloud REST API, không cần viết code server trung gian. & Phức tạp hơn, cần duy trì MQTT Broker (như Mosquitto) và viết thêm service ghi dữ liệu vào DB. \\
+\midrule
+\textbf{Overhead gói tin} & Lớn do header HTTP lớn (HTTP Headers, TLS handshake cho mỗi lần POST). & Nhỏ, tiết kiệm băng thông và năng lượng của vi điều khiển. \\
+\midrule
+\textbf{Khả năng lưu trữ} & Ghi trực tiếp vào bảng dữ liệu Postgres trong tích tắc, đồng bộ ngay lập tức. & Đòi hỏi một Subscriber trung gian đọc từ Topic rồi thực hiện câu lệnh chèn vào Database. \\
+\midrule
+\textbf{Bảo mật} & Rất cao, mã hóa TLS 1.2/1.3, xác thực qua API Key và Bearer Token ở header. & Trung bình, thường không mã hóa TLS trên các thiết bị nhúng giá rẻ do thiếu bộ nhớ RAM. \\
+\midrule
+\textbf{Phù hợp project} & \textbf{Rất phù hợp}: Chu kỳ lấy mẫu thưa (5 phút), không yêu cầu real-time dưới 1 giây, ưu tiên đơn giản và bảo mật. & Phù hợp cho các ứng dụng yêu cầu truyền nhận liên tục dưới 1 giây (như điều khiển thiết bị). \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table}
+
+\section{Tổng quan chức năng hệ thống}
+\subsection{Các tác nhân hệ thống (Actors)}
+Hệ thống quan trắc chất lượng không khí tương tác với 4 tác nhân chính:
+\begin{enumerate}
+    \item \textbf{Người phát triển / Sinh viên (Developer)}: Cấu hình phần cứng, nạp firmware, theo dõi log debug qua Serial Monitor, trích xuất dữ liệu lịch sử để chạy thuật toán hiệu chuẩn.
+    \item \textbf{Người quan sát / Người dùng (Observer)}: Theo dõi các chỉ số đo trực quan tại chỗ qua màn hình OLED hoặc nhận tin nhắn báo cáo/cảnh báo trên điện thoại qua Telegram.
+    \item \textbf{Cơ sở dữ liệu Supabase (Cloud Database)}: Lưu trữ dữ liệu đo đạc, thực thi các database webhooks để kích hoạt Edge Functions.
+    \item \textbf{Telegram Bot API (Alerting Service)}: Tiếp nhận yêu cầu gửi tin nhắn từ Edge Function và chuyển tiếp tin nhắn cảnh báo tới chat ID của người dùng.
+\end{enumerate}
+
+\subsection{Sơ đồ Use Case tổng quát}
+Mối quan hệ tương tác giữa các tác nhân và chức năng hệ thống được mô tả khái quát qua biểu đồ use case dưới đây.
+
+\begin{figure}[H]
+    \centering
+    \setlength{\fboxsep}{15pt}
+    \setlength{\fboxrule}{1.2pt}
+    \fbox{
+        \begin{minipage}{0.85\textwidth}
+            \centering
+            \vspace{1.5cm}
+            \textcolor{blue}{\textbf{[SƠ ĐỒ USE CASE HỆ THỐNG]}} \\
+            \vspace{0.5cm}
+            \begin{tabular}{rcl}
+                \textbf{Developer} & $\rightarrow$ & [Cấu hình hệ thống] / [Nạp Firmware] \\
+                \textbf{ESP32 System} & $\rightarrow$ & [Thu thập dữ liệu cảm biến] \\
+                                      & $\rightarrow$ & [Hiển thị OLED] / [Cảnh báo LED-Buzzer] \\
+                                      & $\rightarrow$ & [Lưu offline cache khi mất mạng] \\
+                                      & $\rightarrow$ & [HTTPS POST gửi Supabase] \\
+                \textbf{Supabase Cloud} & $\rightarrow$ & [Kích hoạt Webhook] $\rightarrow$ \textbf{Telegram Bot} $\rightarrow$ \textbf{Observer}
+            \end{tabular}
+            \vspace{1.5cm}
+        \end{minipage}
+    }
+    \caption{Biểu đồ Use Case tổng quát của hệ thống}
+    \label{fig:usecase}
+\end{figure}
+
+\subsection{Quy trình vận hành tổng quát}
+Quy trình hoạt động của trạm đo chất lượng không khí bắt đầu ngay khi thiết bị được cấp nguồn:
+\begin{enumerate}
+    \item \textbf{Khởi tạo hệ thống}: ESP32 bật nguồn, khởi tạo cổng Serial, cấu hình chân GPIO, gắn ngắt ngoài cho nút bấm, khởi tạo bus I2C điều khiển OLED, khởi tạo cảm biến và nạp dữ liệu cấu hình từ SPIFFS.
+    \item \textbf{Chu kỳ làm nóng cảm biến (Warm-up State)}: Relay kích hoạt cấp nguồn 5V cho buồng đo, quạt hút bắt đầu chạy và dây gia nhiệt của MQ135 hoạt động. Màn hình OLED hiển thị trạng thái đếm ngược 60 giây để cảm biến ổn định nhiệt độ.
+    \item \textbf{Đọc cảm biến (Read State)}: Sau 60 giây, ESP32 bật LED hồng ngoại của GP2Y1010, đọc giá trị điện áp ADC từ cảm biến bụi và khí MQ135, đồng thời đọc nhiệt độ/độ ẩm từ DHT22.
+    \item \textbf{Cập nhật và Cảnh báo cục bộ}: Dữ liệu được lọc nhiễu, cập nhật lên màn hình OLED. Nếu các chỉ số vượt ngưỡng cấu hình an toàn, còi buzzer và LED đỏ sẽ phát tín hiệu cảnh báo.
+    \item \textbf{Truyền dữ liệu đám mây (Publish State)}: TaskNetwork kiểm tra kết nối Wi-Fi. Nếu có mạng, dữ liệu được đóng gói JSON và POST lên Supabase, đồng thời quét và gửi bù dữ liệu lưu trong SPIFFS cache (nếu có). Nếu mất mạng, dữ liệu tự động ghi vào file \texttt{/cache.txt} trong SPIFFS.
+    \item \textbf{Trạng thái chờ (Idle State)}: Tắt Relay cấp nguồn buồng đo và quạt hút (RELAY\_OFF) để tiết kiệm năng lượng và tăng tuổi thọ cảm biến, sau đó hệ thống ngủ trong 5 phút trước khi lặp lại chu kỳ mới.
+\end{enumerate}
+
+\section{Yêu cầu chức năng (Functional Requirements)}
+Các yêu cầu chức năng bắt buộc đối với trạm quan trắc chất lượng không khí được mô tả chi tiết trong Bảng \ref{tab:functionalreqs}.
+
+\begin{table}[H]
+\centering
+\caption{Bảng yêu cầu chức năng hệ thống (FR)}
+\label{tab:functionalreqs}
+\begin{small}
+\begin{tabular}{clp{10.0cm}}
+\toprule
+\textbf{ID} & \textbf{Tên yêu cầu} & \textbf{Mô tả chi tiết tính năng} \\
+\midrule
+\textbf{FR1} & Đo lường chỉ số & Hệ thống phải tự động đo các thông số nhiệt độ, độ ẩm, nồng độ bụi tương đối, nồng độ khí gas tổng quát và áp suất khí quyển. \\
+\midrule
+\textbf{FR2} & Làm nóng cảm biến & Hệ thống phải điều khiển relay bật nguồn quạt hút và bộ nung cảm biến khí ổn định trước khi đọc dữ liệu 60 giây. \\
+\midrule
+\textbf{FR3} & Hiển thị trực quan & Hệ thống phải hiển thị trạng thái hoạt động, quá trình đếm ngược warm-up, các thông số đo được và địa chỉ IP Wi-Fi lên OLED SSD1306. \\
+\midrule
+\textbf{FR4} & Cảnh báo tại chỗ & Phát tín hiệu còi buzzer kêu ngắt quãng và nháy LED đỏ liên tục khi bất kỳ chỉ số nào vượt ngưỡng cảnh báo thiết lập. \\
+\midrule
+\textbf{FR5} & Gửi dữ liệu đám mây & Đóng gói dữ liệu dạng JSON và thực hiện HTTP POST an toàn (có Bearer Token) lên cơ sở dữ liệu Supabase qua Wi-Fi. \\
+\midrule
+\textbf{FR6} & Offline Caching & Tự động phát hiện mất mạng, chuyển đổi trạng thái lưu trữ cục bộ vào flash qua SPIFFS, và đẩy bù dữ liệu khi mạng được khôi phục. \\
+\midrule
+\textbf{FR7} & Cảnh báo từ xa & Gửi tin nhắn cảnh báo tiếng Việt không dấu đến Telegram của người dùng ngay lập tức khi phát hiện khí gas rò rỉ hoặc bụi mịn vượt ngưỡng. \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table}
+
+\section{Yêu cầu phi chức năng (Non-Functional Requirements)}
+Bên cạnh các tính năng cốt lõi, trạm đo cần đáp ứng các tiêu chuẩn kỹ thuật phi chức năng về hiệu năng, độ ổn định và chi phí được tổng hợp trong Bảng \ref{tab:nonfunctionalreqs}.
+
+\begin{table}[H]
+\centering
+\caption{Bảng yêu cầu phi chức năng hệ thống (NFR)}
+\label{tab:nonfunctionalreqs}
+\begin{small}
+\begin{tabular}{clp{9.0cm}l}
+\toprule
+\textbf{ID} & \textbf{Nhóm yêu cầu} & \textbf{Mô tả chi tiết yêu cầu kỹ thuật} & \textbf{Chỉ tiêu đạt} \\
+\midrule
+\textbf{NFR1} & Thời gian đáp ứng & Thời gian cập nhật OLED sau khi đọc cảm biến hoàn tất. & $< 1$ giây \\
+\textbf{NFR2} & Độ trễ truyền cloud & Độ trễ gửi HTTP POST lên Supabase khi mạng ổn định. & $< 2$ giây \\
+\textbf{NFR3} & Thời gian giữ cache & Hệ thống phải lưu trữ dữ liệu offline liên tục trong nhiều ngày khi mất Wi-Fi. & Tối thiểu 7 ngày \\
+\textbf{NFR4} & Độ ổn định phần mềm & Hệ thống phải chạy liên tục không bị treo đơ nhờ cơ chế Watchdog Timer. & 24/7 không lỗi \\
+\textbf{NFR5} & Tiết kiệm năng lượng & Tắt nguồn buồng đo và quạt hút trong trạng thái IDLE. & Giảm dòng tiêu thụ \\
+\textbf{NFR6} & Tính phi chặn (Non-blocking) & Mạng lỗi hoặc mất kết nối cloud không được làm treo task đọc cảm biến hay task OLED. & Sử dụng FreeRTOS \\
+\textbf{NFR7} & An toàn dữ liệu & Ngăn chặn tranh chấp ghi đọc SensorRecord bằng cơ chế khóa bảo vệ. & Dùng \texttt{dataMutex} \\
+\textbf{NFR8} & Tránh xung đột I2C & Tránh xung đột khi cả task đọc cảm biến và task OLED truy cập bus I2C cùng lúc. & Dùng \texttt{i2cMutex} \\
+\textbf{NFR9} & Tính bảo mật token & Giấu kín hoàn toàn Telegram Bot Token khỏi firmware của thiết bị. & Dùng Edge Functions \\
+\textbf{NFR10} & Chi phí chế tạo & Tổng chi phí linh kiện phần cứng cho một nút đo nguyên mẫu. & $< 2.000.000$ VNĐ \\
+\textbf{NFR11} & Khả năng mở rộng & Dễ dàng tích hợp thêm cảm biến mới hoặc thay đổi chu kỳ mà không cần viết lại toàn bộ code. & Thiết kế module hóa \\
+\textbf{NFR12} & Khả năng cập nhật & Hỗ trợ nạp chương trình từ xa thông qua mạng Wi-Fi nội bộ. & Cấu hình OTA thành công \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table}
