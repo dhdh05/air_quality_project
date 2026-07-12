@@ -23,8 +23,8 @@ Hệ thống hoạt động dựa trên mô hình máy trạng thái (FSM) gồm
                   ┌────────────────────────┐                         │
                   │        Trạng thái      │                         │
                   │     WARMUP (60 giây)   │                         │
-                  │ - Đóng nguồn MOSFET    │                         │
-                  │ - Khởi động lò sưởi    │                         │
+                  │ - Đóng nguồn relay     │                         │
+                  │ - Đốt nóng MQ135       │                         │
                   └───────────┬────────────┘                         │
                               │                                      │
                               │ (Đủ 60 giây)                         │
@@ -35,7 +35,7 @@ Hệ thống hoạt động dựa trên mô hình máy trạng thái (FSM) gồm
                   │ - Đọc cảm biến         │ (Xử lý xong)
                   │ - Cập nhật màn hình    │
                   │ - POST lên Supabase    │
-                  │ - Ngắt nguồn MOSFET    │
+                  │ - Ngắt nguồn relay     │
                   └────────────────────────┘
 ```
 
