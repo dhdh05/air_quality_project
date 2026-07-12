@@ -26,6 +26,11 @@ supabase/.temp/
 data/
 report/
 oldversion_code/
+docs/
+draft/
+hardware/
+media/
+
 # Common temp/editor leftovers
 *.tmp
 *.bak
