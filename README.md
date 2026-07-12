@@ -15,7 +15,7 @@ Hệ thống hoạt động dựa trên mô hình máy trạng thái (FSM) gồm
                   │        Trạng thái      │
                   │       IDLE (5 phút)    │◄────────────────────────┐
                   │ - Ngắt nguồn MOSFET    │                         │
-                  │ - OLED tắt sau 30 giây │                         │
+                  │ - OLED hiển thị lần đo gần nhất|                 │
                   └───────────┬────────────┘                         │
                               │                                      │
                               │ (Đủ 5 phút)                          │
@@ -39,9 +39,9 @@ Hệ thống hoạt động dựa trên mô hình máy trạng thái (FSM) gồm
                   └────────────────────────┘
 ```
 
-*   **IDLE (Chờ)**: MOSFET tắt nguồn cấp 5V cho cảm biến MQ135 (bộ nung nóng) và quạt hút. Màn hình OLED SSD1306 tự động chuyển sang chế độ ngủ (sleep mode) sau 30 giây để chống hiện tượng burn-in (lưu ảnh). Chu kỳ chờ mặc định là 5 phút (`SAMPLING_INTERVAL`).
+*   **IDLE (Chờ)**: MOSFET tắt nguồn cấp 5V cho cảm biến MQ135 (bộ nung nóng) và quạt hút. Màn hình OLED SSD1306 sẽ hiển thị kết quả của lần đo gần nhất. Chu kỳ chờ mặc định là 5 phút (`SAMPLING_INTERVAL`).
 *   **WARMUP (Làm nóng)**: MOSFET được kích dẫn để cấp nguồn 5V. Hệ thống chờ trong 60 giây (`WARMUP_DURATION`) để lò sưởi của MQ135 ổn định trước khi tiến hành đo đạc chính xác. Màn hình OLED tự động bật để báo tiến trình.
-*   **READ_AND_PUBLISH (Đo & Gửi dữ liệu)**: ESP32 tiến hành lấy mẫu cảm biến, hiển thị kết quả lên OLED, đẩy payload JSON tới Supabase API qua Wi-Fi, kích hoạt cảnh báo (LED/Buzzer) nếu chất lượng không khí vượt ngưỡng, sau đó ngắt nguồn MOSFET và quay lại trạng thái IDLE.
+*   **READ_AND_PUBLISH (Đo & Gửi dữ liệu)**: ESP32 tiến hành lấy mẫu cảm biến, hiển thị kết quả lên OLED, đẩy payload JSON tới Supabase API qua Wi-Fi, kích hoạt cảnh báo (LED/Buzzer) và gửi thông báo qua telegram bot nếu chất lượng không khí vượt ngưỡng, sau đó ngắt nguồn relay và quay lại trạng thái IDLE.
 
 ---
 
@@ -50,13 +50,13 @@ Hệ thống hoạt động dựa trên mô hình máy trạng thái (FSM) gồm
 Hệ thống hoạt động với hai đường nguồn riêng biệt: nguồn USB **3.3V - 5V từ ESP32** cho các linh kiện logic dòng nhỏ, và nguồn ngoài độc lập **5V - 2A** cấp cho lò sưởi MQ135 và quạt gió nhằm tránh hiện tượng sụt áp hệ thống gây reset vi điều khiển.
 
 ### Sơ đồ đấu nối MOSFET/Relay điều khiển nguồn
-Cổng Gate của MOSFET (hoặc chân tín hiệu Relay) được điều khiển thông qua chân `SENSOR_POWER_PIN` (GPIO 32). Khi ở trạng thái `WARMUP` và `READ_AND_PUBLISH`, chân này xuất mức cao (`HIGH`) để dẫn thông nguồn 5V ngoài cấp cho chân **VCC của MQ135** và cực dương của **Quạt gió**.
+Chân tín hiệu Relay) được điều khiển thông qua chân `SENSOR_POWER_PIN` (GPIO 16). Khi ở trạng thái `WARMUP` và `READ_AND_PUBLISH`, chân này xuất mức cao (`HIGH`) để dẫn thông nguồn 5V ngoài cấp cho chân **VCC của MQ135** và cực dương của **Quạt gió**.
 
 ### Bảng cấu hình sơ đồ chân (Pin Mapping)
 
 | Thiết bị | Chân thiết bị | Chân ESP32 | Ghi chú / Yêu cầu phần cứng |
 | :--- | :--- | :--- | :--- |
-| **Relay / MOSFET** | Chân điều khiển (Gate/Signal) | **GPIO 16** | Điều khiển đóng/cắt nguồn cấp 5V ngoài cho MQ135 và Quạt |
+| **Relay** | Chân điều khiển (Gate/Signal) | **GPIO 16** | Điều khiển đóng/cắt nguồn cấp 5V ngoài cho MQ135 và Quạt |
 | **Màn hình OLED** | SDA | **GPIO 21** | Giao tiếp I2C, cần nguồn 3.3V |
 | | SCL | **GPIO 22** | Giao tiếp I2C, cần nguồn 3.3V |
 | **DHT22** | Data | **GPIO 14** | Cần kết nối điện trở pull-up 4.7kΩ - 10kΩ giữa Data và VCC |
