@@ -9,6 +9,7 @@ const TELEGRAM_CHAT_ID = Deno.env.get("TELEGRAM_CHAT_ID");
 
 // Warning Thresholds loaded from environment variables with safe fallbacks
 const MQ135_ALERT_THRESHOLD = parseFloat(Deno.env.get("MQ135_ALERT_THRESHOLD") || "1000");
+const GAS_INDEX_ALERT_THRESHOLD = parseFloat(Deno.env.get("GAS_INDEX_ALERT_THRESHOLD") || "100");
 const DUST_ALERT_THRESHOLD = parseFloat(Deno.env.get("DUST_ALERT_THRESHOLD") || "150");
 const TEMP_ALERT_THRESHOLD = parseFloat(Deno.env.get("TEMP_ALERT_THRESHOLD") || "40");
 const HUMIDITY_ALERT_THRESHOLD = parseFloat(Deno.env.get("HUMIDITY_ALERT_THRESHOLD") || "85");
@@ -26,6 +27,7 @@ interface AirQualityRecord {
   humidity: number | null;
   mq135_ppm: number | null;
   mq135_v: number | null;
+  gas_index: number | null;
   dust_density: number | null;
   status: number | null;
   warning: boolean | null;
@@ -138,20 +140,22 @@ Thoi gian ghi nhan cuoi cung: ${localTimeStr}`;
       const last24h = new Date(new Date().getTime() - 24 * 60 * 60 * 1000).toISOString();
       const { data: stats, error: statsError } = await supabase
         .from("air_quality_logs")
-        .select("temperature, humidity, mq135_ppm, dust_density")
+        .select("temperature, humidity, gas_index, mq135_ppm, dust_density")
         .gte("created_at", last24h);
 
       if (statsError) {
         throw new Error(`Failed to query daily statistics: ${statsError.message}`);
       }
 
-      let avgTemp = 0, avgHum = 0, avgMq = 0, avgDust = 0;
+      let avgTemp = 0, avgHum = 0, avgGasIndex = 0, avgMq = 0, avgDust = 0;
+      let countGasIndex = 0;
       let countTemp = 0, countHum = 0, countMq = 0, countDust = 0;
 
       if (stats && stats.length > 0) {
         for (const row of stats) {
           if (row.temperature !== null) { avgTemp += row.temperature; countTemp++; }
           if (row.humidity !== null) { avgHum += row.humidity; countHum++; }
+          if (row.gas_index !== null) { avgGasIndex += row.gas_index; countGasIndex++; }
           if (row.mq135_ppm !== null) { avgMq += row.mq135_ppm; countMq++; }
           if (row.dust_density !== null) { avgDust += row.dust_density; countDust++; }
         }
@@ -159,7 +163,9 @@ Thoi gian ghi nhan cuoi cung: ${localTimeStr}`;
 
       const reportTemp = countTemp > 0 ? `${(avgTemp / countTemp).toFixed(1)} oC` : "...";
       const reportHum = countHum > 0 ? `${(avgHum / countHum).toFixed(1)} %` : "...";
-      const reportMq = countMq > 0 ? `${(avgMq / countMq).toFixed(1)} PPM` : "...";
+      const reportMq = countGasIndex > 0
+        ? `${(avgGasIndex / countGasIndex).toFixed(1)} / 100 (chi so tuong doi)`
+        : countMq > 0 ? `${(avgMq / countMq).toFixed(1)} (uoc luong cu)` : "...";
       const reportDust = countDust > 0 ? `${(avgDust / countDust).toFixed(1)} ug/m3` : "...";
 
       const formattedTime = new Intl.DateTimeFormat("vi-VN", {
@@ -208,7 +214,11 @@ Thoi gian bao cao: ${formattedTime}`;
     // Check individual threshold warning conditions based on environment variables
     const isTempHigh = record.temperature !== null && record.temperature > TEMP_ALERT_THRESHOLD;
     const isHumHigh = record.humidity !== null && record.humidity > HUMIDITY_ALERT_THRESHOLD;
-    const isGasHigh = record.mq135_ppm !== null && record.mq135_ppm > MQ135_ALERT_THRESHOLD;
+    // Prefer the relative gas index used by Method A. Keep the legacy PPM
+    // fallback for old rows created before the schema/firmware migration.
+    const isGasHigh = record.gas_index !== null
+      ? record.gas_index > GAS_INDEX_ALERT_THRESHOLD
+      : record.mq135_ppm !== null && record.mq135_ppm > MQ135_ALERT_THRESHOLD;
     const isDustHigh = record.dust_density !== null && record.dust_density > DUST_ALERT_THRESHOLD;
     
     // Status warning: 1 = SENSOR_READ_ERROR, 2 = SENSOR_TIMEOUT, 3 = OFFLINE_CACHED
@@ -232,7 +242,13 @@ Thoi gian bao cao: ${formattedTime}`;
       } else {
         if (isTempHigh) reasons.push(`Nhiet do cao (${record.temperature}°C > ${TEMP_ALERT_THRESHOLD}°C)`);
         if (isHumHigh) reasons.push(`Do am cao (${record.humidity}% > ${HUMIDITY_ALERT_THRESHOLD}%)`);
-        if (isGasHigh) reasons.push(`Khi gas cao (${record.mq135_ppm} PPM > ${MQ135_ALERT_THRESHOLD} PPM)`);
+        if (isGasHigh) {
+          if (record.gas_index !== null) {
+            reasons.push(`Chi so khi cao (${record.gas_index.toFixed(1)} > ${GAS_INDEX_ALERT_THRESHOLD})`);
+          } else {
+            reasons.push(`Khi gas uoc luong cao (${record.mq135_ppm} > ${MQ135_ALERT_THRESHOLD})`);
+          }
+        }
         if (isDustHigh) reasons.push(`Bui min cao (${record.dust_density} ug/m3 > ${DUST_ALERT_THRESHOLD} ug/m3)`);
       }
 
@@ -254,8 +270,10 @@ Thoi gian bao cao: ${formattedTime}`;
       const humVal = record.humidity !== null ? `${record.humidity.toFixed(1)} %` : "...";
       
       let mqVal = "...";
-      if (record.mq135_ppm !== null) {
-        mqVal = `${record.mq135_ppm.toFixed(1)} PPM`;
+      if (record.gas_index !== null) {
+        mqVal = `${record.gas_index.toFixed(1)} / 100 (chi so tuong doi)`;
+      } else if (record.mq135_ppm !== null) {
+        mqVal = `${record.mq135_ppm.toFixed(1)} (uoc luong cu)`;
       } else if (record.mq135_v !== null) {
         mqVal = `${record.mq135_v.toFixed(2)} V`;
       }

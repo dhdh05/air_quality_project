@@ -26,7 +26,5 @@ private:
 
     // Helper to read the analog average of a pin over multiple samples
     int readADC_Average(int pin, int samples = 30);
-
-
+    int readGP2Y_TrimmedAverage();
 };
-

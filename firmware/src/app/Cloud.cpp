@@ -111,6 +111,13 @@ bool Cloud::publishToSupabase(const SensorRecord& data) {
         doc["mq135_v"] = data.mq135_v;
     }
 
+    doc["mq135_raw"] = data.mq135_raw;
+    if (isnan(data.gas_index)) doc["gas_index"] = nullptr;
+    else doc["gas_index"] = data.gas_index;
+    doc["dust_raw"] = data.dust_raw;
+    if (isnan(data.dust_sensor_v)) doc["dust_sensor_v"] = nullptr;
+    else doc["dust_sensor_v"] = data.dust_sensor_v;
+
     doc["status"] = (int)data.status;
     doc["warning"] = data.warning;
 

@@ -37,10 +37,19 @@
 #define MQ135_CO2_B            -2.862   // Scaling factor 'b' for CO2
 #define MQ135_THRESHOLD_VOLT   2.74     // Warning threshold in Volts (equivalent to raw ADC 2200)
 
+// Relative gas index calibration (Method A - no certified reference instrument).
+// 0   = typical baseline observed after the same 60 s power-up procedure.
+// 100 = local warning threshold. Values may exceed 100 during a strong event.
+// This index is NOT a certified CO2 concentration.
+#define MQ135_BASELINE_VOLT    0.219    // Median of 62 stable non-zero MQ135 readings in ver4
+#define MQ135_INDEX_MAX        200.0
+
 // GP2Y1010F Dust Sensor Calibration Constants
 
-#define GP2Y_ZERO_DUST_VOLTAGE 0.588    // Zero-Dust Voltage calibration offset in Volts
-#define GP2Y_SENSITIVITY       0.17     // Sensitivity in V per 100 ug/m3 (0.17)
+#define GP2Y_ZERO_DUST_VOLTAGE 0.334    // Median bedroom baseline from 18 valid ver3 diagnostic logs
+#define GP2Y_SLOPE_UG_M3_PER_V 170.0    // Relative conversion slope used by the original prototype
+#define GP2Y_SAMPLE_COUNT      30       // Complete 10 ms optical sampling cycles per record
+#define GP2Y_TRIM_COUNT        3        // Samples removed from each tail before averaging
 
 // ================= SECURITY & CREDENTIALS =================
 #include "secrets.h"
@@ -48,6 +57,9 @@
 // ================= TIMING PARAMETERS =================
 #define SAMPLING_INTERVAL   300000ULL // Delay in IDLE state between active measurements (5 minutes)
 #define WARMUP_DURATION     60000ULL  // Sensor heater warm-up duration before reading (60 seconds)
+#define BUTTON_DEBOUNCE_MS  50ULL
+#define BUTTON_LONG_PRESS_MS 2000ULL
+#define MANUAL_MEASURE_COOLDOWN_MS 10000ULL
 
 // ================= DATA ENCAPSULATION & ENUMS =================
 enum SensorStatus {
@@ -60,8 +72,12 @@ enum SensorStatus {
 struct SensorRecord {
     float temperature;    // DHT22 temperature in Celsius
     float humidity;       // DHT22 humidity percentage
-    float mq135_ppm;      // MQ135 gas concentration in PPM
+    int mq135_raw;        // Averaged 12-bit MQ135 ADC value
+    float mq135_ppm;      // Legacy curve estimate; not a certified CO2 measurement
     float mq135_v;        // MQ135 raw sensor voltage in Volts
+    float gas_index;      // Relative gas index: baseline=0, local alarm threshold=100
+    int dust_raw;         // Trimmed-mean 12-bit GP2Y ADC value
+    float dust_sensor_v;  // Reconstructed GP2Y output voltage before relative conversion
     float dust_density;   // GP2Y1010F dust density in ug/m3
     SensorStatus status;  // Status flag representing sensor state
     bool warning;         // Boolean flag representing warning condition status

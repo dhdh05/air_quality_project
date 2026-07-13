@@ -2,7 +2,7 @@
 
 Dự án này là firmware nguồn mở được viết bằng C++ trên nền tảng **PlatformIO (VS Code)** cho vi điều khiển ESP32. Hệ thống sử dụng máy trạng thái bất đồng bộ (non-blocking state machine) để quản lý điện năng hiệu quả thông qua MOSFET/Relay, giám sát chất lượng không khí qua các cảm biến khí gas, bụi mịn, nhiệt độ/độ ẩm, và ghi nhật ký dữ liệu thời gian thực lên cơ sở dữ liệu đám mây **Supabase** qua các API RESTful.
 
-Hệ thống còn tích hợp cơ chế cập nhật từ xa (OTA), cơ chế tự động khởi động lại khi treo thông qua Watchdog Timer phần cứng, và nút nhấn vật lý hỗ trợ ngắt để đánh thức giao diện hoặc tắt còi báo động.
+Hệ thống còn tích hợp cơ chế cập nhật từ xa (OTA), cơ chế tự động khởi động lại khi treo thông qua Watchdog Timer phần cứng, và nút nhấn vật lý để tắt còi hoặc yêu cầu đo thủ công.
 
 ---
 
@@ -40,7 +40,7 @@ Hệ thống hoạt động dựa trên mô hình máy trạng thái (FSM) gồm
 ```
 
 *   **IDLE (Chờ)**: MOSFET tắt nguồn cấp 5V cho cảm biến MQ135 (bộ nung nóng) và quạt hút. Màn hình OLED SSD1306 sẽ hiển thị kết quả của lần đo gần nhất. Chu kỳ chờ mặc định là 5 phút (`SAMPLING_INTERVAL`).
-*   **WARMUP (Làm nóng)**: MOSFET được kích dẫn để cấp nguồn 5V. Hệ thống chờ trong 60 giây (`WARMUP_DURATION`) để lò sưởi của MQ135 ổn định trước khi tiến hành đo đạc chính xác. Màn hình OLED tự động bật để báo tiến trình.
+*   **WARMUP (Làm nóng)**: MOSFET được kích dẫn để cấp nguồn 5V. Hệ thống chờ trong 60 giây (`WARMUP_DURATION`) để lò sưởi của MQ135 ổn định trước khi tiến hành đo đạc. Màn hình OLED luôn bật và hiển thị tiến trình.
 *   **READ_AND_PUBLISH (Đo & Gửi dữ liệu)**: ESP32 tiến hành lấy mẫu cảm biến, hiển thị kết quả lên OLED, đẩy payload JSON tới Supabase API qua Wi-Fi, kích hoạt cảnh báo (LED/Buzzer) và gửi thông báo qua telegram bot nếu chất lượng không khí vượt ngưỡng, sau đó ngắt nguồn relay và quay lại trạng thái IDLE.
 
 ---
@@ -65,7 +65,7 @@ Chân tín hiệu Relay) được điều khiển thông qua chân `SENSOR_POWER
 | | Analog Out (Vo) | **GPIO 35** | Tọc giá trị bụi qua cầu chia áp (giống MQ135) |
 | **Buzzer** | Chân tín hiệu | **GPIO 27** | Còi cảnh báo mức cao (Active HIGH) |
 | **LED Cảnh Báo** | Cực dương (Anode) | **GPIO 26** | Đèn LED cảnh báo chất lượng không khí kém |
-| **Nút Nhấn UI** | Chân tín hiệu | **GPIO 4** | Cấu hình ngắt `INPUT_PULLUP`. Nhấn để đánh thức OLED/Tắt còi tạm thời |
+| **Nút Nhấn UI** | Chân tín hiệu | **GPIO 4** | `INPUT_PULLUP`; nhấn ngắn để tắt còi, giữ ít nhất 2 giây để yêu cầu đo thủ công |
 
 > [!WARNING]
 > Không được nối trực tiếp cổng 5V của cảm biến MQ135 hoặc Quạt vào chân nguồn cấp của ESP32. Bộ nguồn 5V-2A ngoài phải được sử dụng chung GND (Ground) với mạch ESP32.
@@ -160,7 +160,8 @@ CREATE POLICY "Cho phép ghi dữ liệu tự động" ON air_quality_logs
 
 ## 6. Các Tính Năng Nâng Cao (Advanced Features)
 
-*   **Ngắt Nút Nhấn Vật Lý**: Nút nhấn trên `BUTTON_PIN` (GPIO 33) cấu hình chế độ ngắt cạnh xuống (`FALLING`). Khi được nhấn, ngắt phần cứng ghi nhận cờ tín hiệu tức thì giúp đánh thức màn hình OLED SSD1306 đang ngủ, đồng thời tắt âm còi báo động (Mute Buzzer) nếu hệ thống đang ở trạng thái cảnh báo khói.
+*   **Nút Nhấn Vật Lý Đa Chức Năng**: Nút trên `BUTTON_PIN` (**GPIO 4**) dùng `INPUT_PULLUP` và được một FreeRTOS task lấy mẫu mỗi 20 ms. Nhấn rồi thả trước 2 giây sẽ tắt còi; giữ đủ 2 giây sẽ yêu cầu một chu kỳ đo thủ công nếu hệ thống đang ở `IDLE`. OLED luôn bật để hiển thị số liệu và trạng thái hiện tại.
+*   **Chống Dội và Chống Spam Nút**: Trạng thái nút phải ổn định ít nhất 50 ms mới được công nhận. Mỗi lần giữ chỉ sinh đúng một lệnh; lệnh đo bị bỏ qua nếu hệ thống đang làm nóng/đang đo, đồng thời hai lệnh đo thủ công hợp lệ phải cách nhau tối thiểu 10 giây.
 *   **Watchdog Timer (WDT) Phần Cứng**: Khởi động WDT của ESP32 với chu kỳ 15 giây. Trong các tác vụ tốn thời gian như thiết lập WiFi và đăng ký gửi gói tin HTTP POST tới Supabase, hàm reset watchdog được tích hợp trong vòng lặp kết nối để ngăn ngừa ESP32 bị reset nhầm, đồng thời bảo vệ hệ thống không bị treo vô hạn khi mất tín hiệu mạng đột ngột.
 *   **Cập Nhật Từ Xa (OTA Updates)**: Chức năng `setupOTA()` được tích hợp sẵn giúp nạp firmware mới qua giao thức mạng nội bộ không dây (WiFi), loại bỏ sự bất tiện của việc phải tháo dỡ thiết bị để cắm cáp nạp trực tiếp.
 *   **Cảnh Báo Từ Xa qua Telegram Bot**: Hỗ trợ Supabase Edge Function cho Telegram alert; cần cấu hình secret và deploy function. Đây là tính năng chạy phía Cloud để bảo mật thông tin, hoàn toàn không lưu trữ token Telegram trên firmware ESP32.

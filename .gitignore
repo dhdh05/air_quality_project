@@ -18,8 +18,10 @@ compile_commands.json
 firmware/include/secrets.h
 .env
 .env.*
+!.env.example
 supabase/.env
 supabase/.env.*
+!supabase/.env.example
 supabase/.temp/
 
 # Generated or runtime-only data
@@ -30,6 +32,15 @@ docs/
 draft/
 hardware/
 media/
+tmp/
+*.aux
+*.bbl
+*.blg
+*.lof
+*.lot
+*.out
+*.synctex.gz
+*.toc
 
 # Common temp/editor leftovers
 *.tmp
@@ -37,3 +48,11 @@ media/
 *~
 .DS_Store
 Thumbs.db
+.agents/
+.artifact_work/
+.docx_qa/
+report__2_/
+
+#supabase 
+supabase/.temp/
+supabase/migrations/

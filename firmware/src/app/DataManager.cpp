@@ -46,6 +46,13 @@ bool DataManager::cacheRecord(const SensorRecord& record) {
         doc["mq135_ppm"] = record.mq135_ppm;
     }
 
+    doc["mq135_raw"] = record.mq135_raw;
+    if (isnan(record.gas_index)) doc["gas_index"] = nullptr;
+    else doc["gas_index"] = record.gas_index;
+    doc["dust_raw"] = record.dust_raw;
+    if (isnan(record.dust_sensor_v)) doc["dust_sensor_v"] = nullptr;
+    else doc["dust_sensor_v"] = record.dust_sensor_v;
+
     if (isnan(record.mq135_v)) {
         doc["mq135_v"] = nullptr;
     } else {
@@ -114,8 +121,13 @@ void DataManager::processCachedRecords(Cloud& cloud) {
         record.humidity    = doc["humidity"].isNull() ? NAN : doc["humidity"].as<float>();
         record.mq135_ppm   = doc["mq135_ppm"].isNull() ? NAN : doc["mq135_ppm"].as<float>();
         record.mq135_v     = doc["mq135_v"].isNull() ? NAN : doc["mq135_v"].as<float>();
+        record.mq135_raw   = doc["mq135_raw"].isNull() ? 0 : doc["mq135_raw"].as<int>();
+        record.gas_index   = doc["gas_index"].isNull() ? NAN : doc["gas_index"].as<float>();
+        record.dust_raw    = doc["dust_raw"].isNull() ? 0 : doc["dust_raw"].as<int>();
+        record.dust_sensor_v = doc["dust_sensor_v"].isNull() ? NAN : doc["dust_sensor_v"].as<float>();
         record.dust_density = doc["dust_density"].isNull() ? NAN : doc["dust_density"].as<float>();
         record.status      = OFFLINE_CACHED; // Override status to signify it was cached offline
+        record.warning     = false;
 
         // Try to upload record
         if (cloud.publishToSupabase(record)) {

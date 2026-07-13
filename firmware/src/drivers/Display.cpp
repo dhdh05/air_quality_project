@@ -92,14 +92,14 @@ void Display::showData(const SensorRecord& data, const char* status) {
         _display.print(" mV");
     }
 
-    // CO2 Gas readings in PPM
+    // Relative gas index. This avoids claiming selective/certified CO2 data.
     _display.setCursor(0, 37);
-    _display.print("CO2: ");
-    if (isnan(data.mq135_ppm) || data.status == SENSOR_READ_ERROR) {
+    _display.print("Gas idx: ");
+    if (isnan(data.gas_index) || data.status == SENSOR_READ_ERROR) {
         _display.print("--");
     } else {
-        _display.print(data.mq135_ppm, 0);
-        _display.print(" PPM");
+        _display.print(data.gas_index, 0);
+        _display.print("/100");
     }
 
     // GP2Y Dust Density
@@ -147,4 +147,3 @@ void Display::sleep() {
 void Display::wakeUp() {
     _display.ssd1306_command(SSD1306_DISPLAYON);
 }
-

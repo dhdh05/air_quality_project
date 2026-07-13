@@ -45,16 +45,46 @@ SensorRecord Sensors::readAll() {
     }
 
     // 2. Read MQ135 (analog average reading)
-    int rawMQ = readADC_Average(MQ135_PIN, 30);
-    float mqAdcVoltage = rawMQ * 3.3 / 4095.0;
-    float mq135_v = mqAdcVoltage * VOLTAGE_DIVIDER_FACTOR;
+    analogSetPinAttenuation(MQ135_PIN, ADC_11db);
+    delay(10);
+
+    long mqMillivoltSum = 0;
+
+    for (int i = 0; i < 30; i++) {
+        mqMillivoltSum += analogReadMilliVolts(MQ135_PIN);
+        delay(3);
+    }
+
+    float mqAdcMillivolts = mqMillivoltSum / 30.0f;
+    float mqAdcVoltage = mqAdcMillivolts / 1000.0f;
+
+    // Quy đổi ngược qua cầu chia áp
+    float mq135_v =
+        mqAdcVoltage * VOLTAGE_DIVIDER_FACTOR;
+
+    // Raw tương đương để tiếp tục ghi log
+    int rawMQ =
+        round(mqAdcVoltage * 4095.0f / 3.3f);
     
     Serial.printf("[Sensors] MQ135 Raw ADC: %d, Voltage: %.3f V\n", rawMQ, mq135_v);
 
-    record.mq135_v = mq135_v; // Save the raw voltage for display
+    record.mq135_raw = rawMQ;
+    record.mq135_v = mq135_v; // Save the reconstructed sensor voltage for display/logging
 
-    if (rawMQ <= 2) { // Only trigger NAN if the pin is completely grounded/disconnected
+    // Relative indicator used when no certified gas reference is available.
+    // It intentionally avoids presenting the MQ135 as a selective CO2 instrument.
+    float gasSpan = MQ135_THRESHOLD_VOLT - MQ135_BASELINE_VOLT;
+    record.gas_index = gasSpan > 0.0
+        ? 100.0 * (mq135_v - MQ135_BASELINE_VOLT) / gasSpan
+        : NAN;
+    if (!isnan(record.gas_index)) {
+        record.gas_index = constrain(record.gas_index, 0.0f, MQ135_INDEX_MAX);
+    }
+
+    if (mqAdcMillivolts < 5.0f) {
+        record.mq135_v = NAN;
         record.mq135_ppm = NAN;
+        record.gas_index = NAN;
     } else {
         // Calculate MQ135 sensor resistance (Rs) and calculate PPM using Rs/R0 curve
         if (mq135_v <= 0.0) mq135_v = 0.001; 
@@ -71,22 +101,20 @@ SensorRecord Sensors::readAll() {
         }
     }
 
-    // 3. Read GP2Y Dust Sensor
-    // GP2Y LED is active LOW. Turn it ON
-    digitalWrite(GP2Y_LED_PIN, LOW);
-    delayMicroseconds(280); // Stabilization window before ADC read
-
-    int rawDust = analogRead(GP2Y_PIN);
-
-    delayMicroseconds(40);
-    digitalWrite(GP2Y_LED_PIN, HIGH); // Turn off internal LED
-    delayMicroseconds(9680); // Rest of the 10ms cycle period
+    // 3. Read GP2Y over multiple complete optical cycles. A trimmed mean is
+    // less sensitive to fan/relay/ADC spikes than the former single reading.
+    int rawDust = readGP2Y_TrimmedAverage();
 
     float dustAdcVoltage = rawDust * 3.3 / 4095.0;
     float dustSensorVoltage = dustAdcVoltage * VOLTAGE_DIVIDER_FACTOR;
 
-    // Use original formula from old version code: (0.17 * sensorVoltage - 0.1) * 1000.0
-    float dust = (0.17 * dustSensorVoltage - 0.1) * 1000.0;
+    record.dust_raw = rawDust;
+    record.dust_sensor_v = dustSensorVoltage;
+
+    // Relative dust estimate. V0 and slope remain provisional until a
+    // co-located reference instrument is available.
+    float dust = (dustSensorVoltage - GP2Y_ZERO_DUST_VOLTAGE)
+        * GP2Y_SLOPE_UG_M3_PER_V;
     if (dust < 0.0) {
         dust = 0.0;
     }
@@ -125,3 +153,34 @@ int Sensors::readADC_Average(int pin, int samples) {
     return sum / samples;
 }
 
+int Sensors::readGP2Y_TrimmedAverage() {
+    int samples[GP2Y_SAMPLE_COUNT];
+
+    for (int i = 0; i < GP2Y_SAMPLE_COUNT; i++) {
+        digitalWrite(GP2Y_LED_PIN, LOW);
+        delayMicroseconds(280);
+        samples[i] = analogRead(GP2Y_PIN);
+        delayMicroseconds(40);
+        digitalWrite(GP2Y_LED_PIN, HIGH);
+        delayMicroseconds(9680);
+    }
+
+    // Small fixed-size insertion sort avoids dynamic allocation on the MCU.
+    for (int i = 1; i < GP2Y_SAMPLE_COUNT; i++) {
+        int value = samples[i];
+        int j = i - 1;
+        while (j >= 0 && samples[j] > value) {
+            samples[j + 1] = samples[j];
+            j--;
+        }
+        samples[j + 1] = value;
+    }
+
+    long sum = 0;
+    const int first = GP2Y_TRIM_COUNT;
+    const int last = GP2Y_SAMPLE_COUNT - GP2Y_TRIM_COUNT;
+    for (int i = first; i < last; i++) {
+        sum += samples[i];
+    }
+    return sum / (last - first);
+}

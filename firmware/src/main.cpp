@@ -17,7 +17,7 @@ enum SystemState {
 };
 
 // ================= GLOBAL STATE MACHINE VARIABLES =================
-SystemState currentState          = STATE_WARMUP;
+volatile SystemState currentState = STATE_WARMUP;
 
 SensorRecord sharedRecord         = {0};
 char globalStatus[48]             = "Dang khoi dong...";
@@ -39,30 +39,6 @@ TaskHandle_t xTaskSensorsHandle = NULL;
 TaskHandle_t xTaskNetworkHandle = NULL;
 TaskHandle_t xTaskOLEDHandle    = NULL;
 
-// Button interrupt debouncing and flag variables
-volatile bool buttonPressedFlag   = false;
-volatile unsigned long lastButtonInterruptTime = 0;
-const unsigned long DEBOUNCE_DELAY = 250ULL; // 250 ms debounce window
-
-// ================= INTERRUPT SERVICE ROUTINE (ISR) =================
-void IRAM_ATTR handleButtonInterrupt() {
-    unsigned long interruptTime = millis();
-    // Simple software debounce within the ISR using the hardware clock timer
-    if (interruptTime - lastButtonInterruptTime > DEBOUNCE_DELAY) {
-        buttonPressedFlag = true;
-        lastButtonInterruptTime = interruptTime;
-
-        // Wake up TaskSensors immediately if it is sleeping in the IDLE state
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-        if (xTaskSensorsHandle != NULL) {
-            vTaskNotifyGiveFromISR(xTaskSensorsHandle, &xHigherPriorityTaskWoken);
-        }
-        if (xHigherPriorityTaskWoken) {
-            portYIELD_FROM_ISR();
-        }
-    }
-}
-
 // ================= FREERTOS TASK DEFINITIONS =================
 
 // TaskSensors: Runs on Core 1. Governs state machine and reads sensors.
@@ -75,12 +51,15 @@ void TaskSensorsCode(void* pvParameters) {
         Serial.println("[TaskSensors] Relay ON. Warming up sensors...");
         digitalWrite(RELAY_PIN, RELAY_ON);
 
-        for (int i = WARMUP_DURATION / 1000; i > 0; i--) {
+        const int warmupSeconds = WARMUP_DURATION / 1000;
+        TickType_t nextSecond = xTaskGetTickCount();
+        for (int remaining = warmupSeconds; remaining > 0; remaining--) {
             if (xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
-                snprintf(globalStatus, sizeof(globalStatus), "Lam nong: %ds...", i);
+                snprintf(globalStatus, sizeof(globalStatus), "Lam nong: %ds...", remaining);
                 xSemaphoreGive(dataMutex);
             }
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            Serial.printf("[TaskSensors] Warm-up: %d s remaining.\n", remaining);
+            vTaskDelayUntil(&nextSecond, pdMS_TO_TICKS(1000));
         }
 
         // --- 2. STATE: READ ---
@@ -99,8 +78,12 @@ void TaskSensorsCode(void* pvParameters) {
         if (xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
             sharedRecord.temperature = record.temperature;
             sharedRecord.humidity = record.humidity;
+            sharedRecord.mq135_raw = record.mq135_raw;
             sharedRecord.mq135_ppm = record.mq135_ppm;
             sharedRecord.mq135_v = record.mq135_v;
+            sharedRecord.gas_index = record.gas_index;
+            sharedRecord.dust_raw = record.dust_raw;
+            sharedRecord.dust_sensor_v = record.dust_sensor_v;
             sharedRecord.dust_density = record.dust_density;
             sharedRecord.status = record.status;
             sharedRecord.warning = record.warning;
@@ -126,13 +109,10 @@ void TaskSensorsCode(void* pvParameters) {
         currentState = STATE_IDLE;
         Serial.println("[TaskSensors] Relay OFF. Entering IDLE mode.");
 
-        // Clear any pending button wake-up notifications
-        ulTaskNotifyTake(pdTRUE, 0);
-
-        // Block task until SAMPLING_INTERVAL times out OR button interrupt notifies us
+        // Block until the normal interval expires or TaskButton requests a manual cycle.
         uint32_t notified = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAMPLING_INTERVAL));
         if (notified > 0) {
-            Serial.println("[TaskSensors] Woken up immediately by Button Interrupt!");
+            Serial.println("[TaskSensors] Manual measurement request accepted.");
         } else {
             Serial.println("[TaskSensors] Sampling interval elapsed. Waking up.");
         }
@@ -157,14 +137,6 @@ void TaskOLEDCode(void* pvParameters) {
             continue;
         }
 
-        // Check if button interrupt wants to silence còi (mute buzzer)
-        if (buttonPressedFlag) {
-            buttonPressedFlag = false;
-            if (localRecord.warning) {
-                indicators.mute();
-            }
-        }
-
         // Update the display utilizing i2cMutex to prevent bus conflict
         if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
             if (currentState == STATE_IDLE) {
@@ -174,11 +146,9 @@ void TaskOLEDCode(void* pvParameters) {
                     display.showStatus("Idle");
                 }
             } else if (currentState == STATE_WARMUP) {
-                if (hasValidReadings) {
-                    display.showData(localRecord, "Lam nong...");
-                } else {
-                    display.showStatus(statusCopy);
-                }
+                // Always show the live countdown. Using a fixed "Lam nong..."
+                // label after the first valid record made later cycles look stuck.
+                display.showStatus(statusCopy);
             } else {
                 display.showStatus(statusCopy);
             }
@@ -255,8 +225,7 @@ void setup() {
 
     // Initialize button pin
     pinMode(BUTTON_PIN, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), handleButtonInterrupt, FALLING);
-    Serial.printf("[System] Button interrupt configured on GPIO %d.\n", BUTTON_PIN);
+    Serial.printf("[System] Button GPIO %d: short=mute, hold 2s=manual measurement.\n", BUTTON_PIN);
 
     // Initialize I2C Bus
     Wire.begin(I2C_SDA, I2C_SCL);
@@ -333,8 +302,55 @@ void setup() {
     Serial.println("[System] Hardware Watchdog Timer (WDT) initialized (15s).");
 }
 
-// Main loop: runs as the loopTask on Core 1. Handles WDT feeding.
+// Poll the UI button from Arduino's loop task so it cannot compete with
+// the timing-critical sensor state machine at priority 2.
+void processButton() {
+    static bool stablePressed = false;
+    static bool lastRawPressed = false;
+    static bool longPressHandled = false;
+    static uint32_t rawChangedAt = millis();
+    static uint32_t pressedAt = 0;
+    static uint32_t lastManualRequestAt = 0;
+
+    const uint32_t now = millis();
+    const bool rawPressed = digitalRead(BUTTON_PIN) == LOW;
+
+    if (rawPressed != lastRawPressed) {
+        lastRawPressed = rawPressed;
+        rawChangedAt = now;
+    }
+
+    if (rawPressed != stablePressed && now - rawChangedAt >= BUTTON_DEBOUNCE_MS) {
+        stablePressed = rawPressed;
+        if (stablePressed) {
+            pressedAt = now;
+            longPressHandled = false;
+        } else if (!longPressHandled) {
+            indicators.mute();
+            Serial.println("[Button] Short press: buzzer muted.");
+        }
+    }
+
+    if (stablePressed && !longPressHandled && now - pressedAt >= BUTTON_LONG_PRESS_MS) {
+        longPressHandled = true;
+        const bool cooldownPassed = lastManualRequestAt == 0 ||
+            now - lastManualRequestAt >= MANUAL_MEASURE_COOLDOWN_MS;
+
+        if (currentState != STATE_IDLE) {
+            Serial.println("[Button] Long press ignored: measurement already in progress.");
+        } else if (!cooldownPassed) {
+            Serial.println("[Button] Long press ignored: cooldown active.");
+        } else if (xTaskSensorsHandle != NULL) {
+            lastManualRequestAt = now;
+            xTaskNotifyGive(xTaskSensorsHandle);
+            Serial.println("[Button] Long press: manual measurement requested.");
+        }
+    }
+}
+
+// Main loop: handles button polling and feeds the watchdog.
 void loop() {
-    esp_task_wdt_reset(); // Feed the watchdog timer
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Yield thread for 1 second
+    processButton();
+    esp_task_wdt_reset();
+    vTaskDelay(pdMS_TO_TICKS(20));
 }
